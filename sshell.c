@@ -75,15 +75,35 @@ int main(void) {
             continue;
         }
         
-        if (token_count > 0 && strcmp(tokens[token_count - 1], "&") == 0) {
-            background = 1;
-            tokens[token_count - 1] = NULL;
-            token_count--;
+        if (token_count > 0) {
+            char *last_token = tokens[token_count - 1];
+            size_t last_token_len = strlen(last_token);
 
-            if (token_count == 0) {
-                fprintf(stderr, "Error: missing command\n");
-                continue;
+            if (strcmp(last_token, "&") == 0) {
+                background = 1;
+                tokens[token_count - 1] = NULL;
+                token_count--;
+
+                if (token_count == 0) {
+                    fprintf(stderr, "Error: missing command\n");
+                    continue;
+                }
+            } else if (last_token_len > 1 && last_token[last_token_len - 1] == '&') {
+                background = 1;
+                last_token[last_token_len - 1] = '\0';
+                
+                if (strlen(last_token) == 0) {
+                    fprintf(stderr, "Error: missing command\n");
+                    continue;
+                }
             }
+        }
+
+        for (int i = 0; i < token_count; i++) {
+             if (strcmp(tokens[i], "&") == 0) {
+                  fprintf(stderr, "Error: mislocated background sign\n");
+                  goto next_command;
+             }
         }
 
         int has_pipe = 0;
@@ -151,6 +171,8 @@ int main(void) {
                 fprintf(stderr, "+ completed '%s' [%d]\n", cmdline_copy, WEXITSTATUS(status));
             }
         }
+
+next_command:;
     }
 
     return 0;
