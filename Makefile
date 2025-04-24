@@ -1,16 +1,14 @@
-CC=gcc
-CFLAGS=-Wall -Wextra -Werror -std=c99
-LDFLAGS=
+CC = gcc
+CFLAGS = -Wall -Wextra -Werror -std=c11
+TARGET = sshell
+SRC = sshell.c
 
-SRCS=sshell.c
-EXEC=sshell
+.PHONY: all clean
 
-all: $(EXEC)
+all: $(TARGET)
 
-$(EXEC): $(SRCS)
-	$(CC) $(CFLAGS) $(SRCS) -o $(EXEC) $(LDFLAGS)
+$(TARGET): $(SRC)
+	$(CC) $(CFLAGS) $(SRC) -o $(TARGET)
 
 clean:
-	rm -f $(EXEC) *.o core.*
-
-.PHONY: all clean 
+	rm -f $(TARGET) 
