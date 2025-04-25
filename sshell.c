@@ -1,3 +1,4 @@
+//tools
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -6,17 +7,21 @@
 #include <fcntl.h>
 #include <errno.h>
 
+//set limits
 #define CMDLINE_MAX 512
 #define ARG_MAX 16
 #define PIPE_MAX 4
 
+//member background job
 pid_t background_pid = -1;
 char background_cmdline[CMDLINE_MAX];
 
+//decs
 int execute_pipeline(char *cmdline_copy, char *tokens[], int token_count, int background);
 int is_builtin_command(char *cmd);
 int execute_builtin_command(char *args[], int argc, char *cmdline_copy);
 
+//int main yipppeee
 int main(void) {
     char cmdline[CMDLINE_MAX];
     char cmdline_copy[CMDLINE_MAX];
@@ -25,6 +30,7 @@ int main(void) {
     pid_t pid;
 
     while (1) {
+        //check background job done?
         if (background_pid > 0) {
             if (waitpid(background_pid, &status, WNOHANG) > 0) {
                 fprintf(stderr, "+ completed '%s' [%d]\n", background_cmdline, WEXITSTATUS(status));
@@ -44,6 +50,7 @@ int main(void) {
             fflush(stdout);
         }
 
+        //clean basically
         size_t len = strlen(cmdline);
         if (len > 0 && cmdline[len - 1] == '\n') {
             cmdline[len - 1] = '\0';
@@ -58,6 +65,7 @@ int main(void) {
 
         int background = 0;
 
+        //break command words
         char *tokens[CMDLINE_MAX];
         int token_count = 0;
         char parse_cmdline[CMDLINE_MAX];
@@ -71,21 +79,45 @@ int main(void) {
         }
         tokens[token_count] = NULL;
 
+        //skip if no words
         if (token_count == 0) {
             continue;
         }
         
-        if (token_count > 0 && strcmp(tokens[token_count - 1], "&") == 0) {
-            background = 1;
-            tokens[token_count - 1] = NULL;
-            token_count--;
+        //check last word for and background?
+        if (token_count > 0) {
+            char *last_token = tokens[token_count - 1];
+            size_t last_token_len = strlen(last_token);
 
-            if (token_count == 0) {
-                fprintf(stderr, "Error: missing command\n");
-                continue;
+            if (strcmp(last_token, "&") == 0) {
+                background = 1;
+                tokens[token_count - 1] = NULL;
+                token_count--;
+
+                if (token_count == 0) {
+                    fprintf(stderr, "Error: missing command\n");
+                    continue;
+                }
+            } else if (last_token_len > 1 && last_token[last_token_len - 1] == '&') {
+                background = 1;
+                last_token[last_token_len - 1] = '\0';
+                
+                if (strlen(last_token) == 0) {
+                    fprintf(stderr, "Error: missing command\n");
+                    continue;
+                }
             }
         }
 
+        //check for bad & place
+        for (int i = 0; i < token_count; i++) {
+             if (strcmp(tokens[i], "&") == 0) {
+                  fprintf(stderr, "Error: mislocated background sign\n");
+                  goto next_command;
+             }
+        }
+
+        //pipe or file?
         int has_pipe = 0;
         int has_redirect = 0;
         for (int i = 0; i < token_count; i++) {
@@ -96,11 +128,13 @@ int main(void) {
             }
         }
 
+        //check bad background command
         if (background && !has_pipe && !has_redirect && is_builtin_command(tokens[0])) {
              fprintf(stderr, "Error: builtin cannot be backgrounded\n");
              continue;
         }
 
+        //user want leexit?
         if (!has_pipe && !has_redirect && strcmp(tokens[0], "exit") == 0) {
             if (background_pid > 0) {
                 fprintf(stderr, "Error: active job still running\n");
@@ -112,6 +146,7 @@ int main(void) {
             break;
         }
 
+        //do special command here?
         if (!has_pipe && !has_redirect && !background && is_builtin_command(tokens[0])) {
             execute_builtin_command(tokens, token_count, cmdline_copy);
             continue;
@@ -151,6 +186,8 @@ int main(void) {
                 fprintf(stderr, "+ completed '%s' [%d]\n", cmdline_copy, WEXITSTATUS(status));
             }
         }
+
+next_command:;
     }
 
     return 0;
@@ -193,6 +230,7 @@ int execute_builtin_command(char *args[], int argc, char *cmdline_copy) {
 }
 
 int execute_pipeline(char *cmdline_copy, char *tokens[], int token_count, int background) {
+    /* Store command parts */
     int cmd_start[PIPE_MAX];
     int cmd_end[PIPE_MAX];
     int cmd_count = 0;
@@ -275,6 +313,7 @@ int execute_pipeline(char *cmdline_copy, char *tokens[], int token_count, int ba
         }
     }
     
+//check empty
     int last_cmd_empty = 1;
     for (int j = cmd_start[cmd_count]; j < token_count && tokens[j] != NULL; j++) {
         last_cmd_empty = 0;
@@ -291,9 +330,11 @@ int execute_pipeline(char *cmdline_copy, char *tokens[], int token_count, int ba
           return -1;
      }
     
+    /* Mark end of last command */
     cmd_end[cmd_count] = token_count;
     cmd_count++;
     
+    /* Make tubes (pipes) */
     int pipes[PIPE_MAX - 1][2];
     for (int i = 0; i < cmd_count - 1; i++) {
         if (pipe(pipes[i]) < 0) {
@@ -302,9 +343,12 @@ int execute_pipeline(char *cmdline_copy, char *tokens[], int token_count, int ba
         }
     }
     
+    /* Remember child pids */
     pid_t pids[PIPE_MAX];
     
+    /* Make child run each command */
     for (int i = 0; i < cmd_count; i++) {
+        /* Get args for this command */
         char *cmd_args[ARG_MAX + 1];
         int arg_idx = 0;
         
@@ -381,7 +425,23 @@ int execute_pipeline(char *cmdline_copy, char *tokens[], int token_count, int ba
     
     if (background) {
         background_pid = pids[cmd_count - 1];
-        strncpy(background_cmdline, cmdline_copy, CMDLINE_MAX);
+        
+        // Create a clean copy without the trailing &
+        char clean_cmdline[CMDLINE_MAX];
+        strncpy(clean_cmdline, cmdline_copy, CMDLINE_MAX);
+        clean_cmdline[CMDLINE_MAX-1] = '\0';
+        
+        // Remove trailing & if present
+        int cmd_len = strlen(clean_cmdline);
+        if (cmd_len > 0 && clean_cmdline[cmd_len-1] == '&') {
+            clean_cmdline[cmd_len-1] = '\0';
+            // Remove trailing space if present
+            if (cmd_len > 1 && clean_cmdline[cmd_len-2] == ' ') {
+                clean_cmdline[cmd_len-2] = '\0';
+            }
+        }
+        
+        strncpy(background_cmdline, clean_cmdline, CMDLINE_MAX);
         background_cmdline[CMDLINE_MAX-1] = '\0';
         return 0;
     }
